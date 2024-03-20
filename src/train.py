@@ -80,7 +80,6 @@ def initialize_models_and_optimizers(hps):
         hps.data.filter_length // 2 + 1,
         hps.train.segment_size // hps.data.hop_length,
         **hps.model,
-        sr=hps.sample_rate,
     )
     net_d = MultiPeriodDiscriminator(hps.model.use_spectral_norm)
 
@@ -99,7 +98,7 @@ def initialize_models_and_optimizers(hps):
     return net_g, net_d, optim_g, optim_d
 
 
-def load_model_checkpoint(hps, net_g, net_d, optim_g, optim_d, rank, logger):
+def load_model_checkpoint(hps, train_loader, net_g, net_d, optim_g, optim_d, rank, logger):
     try:
         _, _, _, epoch_str = load_checkpoint(
             latest_checkpoint_path(hps.model_dir, "D_*.pth"), net_d, optim_d, load_opt=hps.enable_opt_load
@@ -226,7 +225,6 @@ def run_training_epoch(epoch, hps, nets, optims, schedulers, train_loader, logge
 
         optim_d.zero_grad()
         accelerator.backward(loss_disc)
-        scheduler_d.step()
         grad_norm_d = commons.clip_grad_value_(net_d.parameters(), 1000.0)
 
         y_d_hat_r, y_d_hat_g, fmap_r, fmap_g = net_d(wave, y_hat)
@@ -238,7 +236,6 @@ def run_training_epoch(epoch, hps, nets, optims, schedulers, train_loader, logge
 
         optim_g.zero_grad()
         accelerator.backward(loss_gen_all)
-        scheduler_g.step()
         grad_norm_g = commons.clip_grad_value_(net_g.parameters(), 1000.0)
 
         if batch_idx % hps.train.log_interval == 0:
@@ -275,7 +272,7 @@ def run_training_epoch(epoch, hps, nets, optims, schedulers, train_loader, logge
 
         global_step += 1
 
-    if epoch % hps.save_every_epoch == 0:
+    if epoch % hps.save_interval == 0:
         save_checkpoint(
             net_g,
             optim_g,
@@ -317,7 +314,7 @@ def run_training_epoch(epoch, hps, nets, optims, schedulers, train_loader, logge
             ckpt, hps.sample_rate, hps.name, epoch, hps.version, hps
         )
         logger.info(f"saving final ckpt:{hps.name}")
-        sleep(1)
+        time.sleep(1)
         os._exit(2333333)
 
 
@@ -344,7 +341,7 @@ def run(
 
     train_loader = prepare_data_loaders(hps, n_gpus, rank)
     net_g, net_d, optim_g, optim_d = initialize_models_and_optimizers(hps)
-    epoch_str, global_step = load_model_checkpoint(hps, net_g, net_d, optim_g, optim_d, rank, logger)
+    epoch_str, global_step = load_model_checkpoint(hps, train_loader, net_g, net_d, optim_g, optim_d, rank, logger)
     scheduler_g, scheduler_d = setup_training(hps, net_g, net_d, optim_g, optim_d, epoch_str)
 
     train_loader, net_g, net_d, optim_g, optim_d, scheduler_g, scheduler_d = accelerator.prepare(

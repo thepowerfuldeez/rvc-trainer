@@ -192,30 +192,41 @@ def plot_spectrogram_to_numpy(spectrogram):
 
 def get_hparams():
     parser = argparse.ArgumentParser()
+
+
     parser.add_argument(
-        "-se",
-        "--save_every_epoch",
-        type=int,
-        required=True,
-        help="checkpoint save frequency (epoch)",
-    )
-    parser.add_argument(
-        "-te", "--total_epoch", type=int, required=True, help="total_epoch"
+        "--exp_dir", type=str, required=True, help="experiment dir"
     )
     parser.add_argument(
         "--save_dir", type=str, required=True, help="save dir (overwrites assets/weights/)"
     )
     parser.add_argument(
-        "-pg", "--pretrainG", type=str, default="", help="Pretrained Discriminator path"
+        "--config", type=str, help="config", default="configs/v3/40k.json"
     )
     parser.add_argument(
-        "-pd", "--pretrainD", type=str, default="", help="Pretrained Generator path"
+        "--data_root", type=Path, help="data root prefix for filelist", default=None
+    )
+
+    parser.add_argument(
+        "--save_interval",
+        type=int,
+        required=False, default=5,
+        help="checkpoint save frequency (epoch)",
+    )
+    parser.add_argument(
+        "--total_epoch", type=int, required=True, help="total_epoch"
+    )
+    parser.add_argument(
+        "--pretrainG", type=str, default="", help="Pretrained Discriminator path"
+    )
+    parser.add_argument(
+        "--pretrainD", type=str, default="", help="Pretrained Generator path"
     )
     parser.add_argument(
         "--enable_opt_load", type=int, default=1, help="enable optimizer load from checkpoint on finetuning"
     )
     parser.add_argument(
-        "-bs", "--batch_size", type=int, required=True, help="batch size"
+        "--batch_size", type=int, required=True, help="batch size"
     )
     parser.add_argument(
         "--lr", type=float, required=True, help="learning rate"
@@ -224,20 +235,10 @@ def get_hparams():
         "--lr_decay", type=float, required=True, help="lr decay each epoch"
     )
     parser.add_argument(
-        "-e", "--experiment_dir", type=str, required=True, help="experiment dir"
-    )  # -m
-    parser.add_argument(
-        "-sr", "--sample_rate", type=str, required=True, help="sample rate, 32k/40k/48k"
-    )
-    parser.add_argument(
-        "-sw",
         "--save_every_weights",
         type=str,
         default="0",
         help="save the extracted model in weights directory when saving checkpoints",
-    )
-    parser.add_argument(
-        "-v", "--version", type=str, help="model version", default="v2"
     )
     parser.add_argument(
         "--log_every", type=int, help="wandb log interval", default=200
@@ -260,17 +261,15 @@ def get_hparams():
         default="coveroke",
     )
     parser.add_argument(
-        "-l",
         "--if_latest",
         type=int,
-        required=True,
+        default=0,
         help="if only save the latest G/D pth file, 1 or 0",
     )
     parser.add_argument(
-        "-c",
         "--if_cache_data_in_gpu",
         type=int,
-        required=True,
+        required=False, default=0,
         help="if caching the dataset in GPU memory, 1 or 0",
     )
     parser.add_argument(
@@ -282,32 +281,32 @@ def get_hparams():
     args = parser.parse_args()
     # name = args.experiment_dir
     # experiment_dir = os.path.join("./logs", args.experiment_dir)
-    experiment_dir = args.experiment_dir
+    experiment_dir = args.exp_dir
 
     config_save_path = os.path.join(experiment_dir, "config.json")
     with open(config_save_path, "r") as f:
         config = json.load(f)
 
     hparams = HParams(**config)
+
+    hparams.data.training_files = f"{experiment_dir}/filelist.txt"
+    hparams.data.data_root = args.data_root
+
     hparams.model_dir = hparams.experiment_dir = experiment_dir
     hparams.save_dir = args.save_dir
-    hparams.save_every_epoch = args.save_every_epoch
+    hparams.save_interval = args.save_interval
     hparams.name = Path(experiment_dir).name
     hparams.total_epoch = args.total_epoch
     hparams.pretrainG = args.pretrainG
     hparams.pretrainD = args.pretrainD
     hparams.enable_opt_load = args.enable_opt_load
-    hparams.version = args.version
     hparams.train.batch_size = args.batch_size
     hparams.train.total_steps = args.total_steps
-    hparams.sample_rate = args.sample_rate
-    hparams.if_f0 = args.if_f0
     hparams.if_ppg = args.if_ppg
     hparams.enable_perturbation = args.enable_perturbation
     hparams.if_latest = args.if_latest
     hparams.save_every_weights = args.save_every_weights
     hparams.if_cache_data_in_gpu = args.if_cache_data_in_gpu
-    hparams.data.training_files = "%s/filelist.txt" % experiment_dir
 
     hparams.train.learning_rate = args.lr
     hparams.train.lr_decay = args.lr_decay
