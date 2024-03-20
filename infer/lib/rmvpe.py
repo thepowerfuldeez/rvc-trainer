@@ -15,13 +15,13 @@ try:
     import intel_extension_for_pytorch as ipex  # pylint: disable=import-error, unused-import
 
     if torch.xpu.is_available():
-        from rvc.infer.modules.ipex import ipex_init
+        from infer.modules.ipex import ipex_init
 
         ipex_init()
 except Exception:  # pylint: disable=broad-exception-caught
     pass
 
-from rvc.infer.lib import jit
+from infer.lib import jit
 
 logger = logging.getLogger(__name__)
 

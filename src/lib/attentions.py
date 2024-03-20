@@ -1,14 +1,12 @@
-import copy
 import math
 from typing import Optional
 
-import numpy as np
 import torch
 from torch import nn
 from torch.nn import functional as F
 
-from rvc.infer.lib.infer_pack import commons, modules
-from rvc.infer.lib.infer_pack.modules import LayerNorm
+from src.lib import commons
+from src.lib.modules import LayerNorm
 
 
 class Encoder(nn.Module):

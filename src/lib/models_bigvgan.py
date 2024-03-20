@@ -8,7 +8,7 @@ from torch.nn import ConvTranspose1d
 from torch.nn.utils import weight_norm
 from torch.nn.utils import remove_weight_norm
 
-from rvc.infer.lib.infer_pack.alias.act import SnakeAlias
+from src.lib.alias.act import SnakeAlias
 
 
 def init_weights(m, mean=0.0, std=0.01):
@@ -281,12 +281,12 @@ class SpeakerAdapter(nn.Module):
         return y
 
 
-class Generator(torch.nn.Module):
+class GeneratorBigVgan(torch.nn.Module):
     # this is our main BigVGAN model. Applies anti-aliased periodic activation for resblocks.
     def __init__(self, resblock_kernel_sizes, resblock_dilation_sizes,
                  upsample_rates, upsample_kernel_sizes, upsample_input,
                  upsample_initial_channel, sampling_rate, spk_dim):
-        super(Generator, self).__init__()
+        super(GeneratorBigVgan, self).__init__()
         self.num_kernels = len(resblock_kernel_sizes)
         self.num_upsamples = len(upsample_rates)
         # speaker adaper, 256 should change by what speaker encoder you use
@@ -391,7 +391,7 @@ class Generator(torch.nn.Module):
             l.remove_weight_norm()
 
     def eval(self, inference=False):
-        super(Generator, self).eval()
+        super(GeneratorBigVgan, self).eval()
         # don't remove weight norm while validation in training loop
         if inference:
             self.remove_weight_norm()

@@ -5,12 +5,12 @@ import logging
 import os
 import subprocess
 import sys
-import shutil
+import traceback
+from collections import OrderedDict
 from pathlib import Path
 
 import numpy as np
 import torch
-from scipy.io.wavfile import read
 
 MATPLOTLIB_FLAG = False
 
@@ -68,35 +68,6 @@ def load_checkpoint_d(checkpoint_path, combd, sbd, optimizer=None, load_opt=1):
     return model, optimizer, learning_rate, iteration
 
 
-# def load_checkpoint(checkpoint_path, model, optimizer=None):
-#   assert os.path.isfile(checkpoint_path)
-#   checkpoint_dict = torch.load(checkpoint_path, map_location='cpu')
-#   iteration = checkpoint_dict['iteration']
-#   learning_rate = checkpoint_dict['learning_rate']
-#   if optimizer is not None:
-#     optimizer.load_state_dict(checkpoint_dict['optimizer'])
-#   # print(1111)
-#   saved_state_dict = checkpoint_dict['model']
-#   # print(1111)
-#
-#   if hasattr(model, 'module'):
-#     state_dict = model.module.state_dict()
-#   else:
-#     state_dict = model.state_dict()
-#   new_state_dict= {}
-#   for k, v in state_dict.items():
-#     try:
-#       new_state_dict[k] = saved_state_dict[k]
-#     except:
-#       logger.info("%s is not in the checkpoint" % k)
-#       new_state_dict[k] = v
-#   if hasattr(model, 'module'):
-#     model.module.load_state_dict(new_state_dict)
-#   else:
-#     model.load_state_dict(new_state_dict)
-#   logger.info("Loaded checkpoint '{}' (epoch {})" .format(
-#     checkpoint_path, iteration))
-#   return model, optimizer, learning_rate, iteration
 def load_checkpoint(checkpoint_path, model, optimizer=None, load_opt=1):
     assert os.path.isfile(checkpoint_path)
     checkpoint_dict = torch.load(checkpoint_path, map_location="cpu")
@@ -219,17 +190,6 @@ def plot_spectrogram_to_numpy(spectrogram):
     return data
 
 
-def load_wav_to_torch(full_path):
-    sampling_rate, data = read(full_path)
-    return torch.FloatTensor(data.astype(np.float32)), sampling_rate
-
-
-def load_filepaths_and_text(filename, split="|"):
-    with open(filename, encoding="utf-8") as f:
-        filepaths_and_text = [line.strip().split(split) for line in f]
-    return filepaths_and_text
-
-
 def get_hparams():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -254,7 +214,6 @@ def get_hparams():
     parser.add_argument(
         "--enable_opt_load", type=int, default=1, help="enable optimizer load from checkpoint on finetuning"
     )
-    parser.add_argument("-g", "--gpus", type=str, default="0", help="split by -")
     parser.add_argument(
         "-bs", "--batch_size", type=int, required=True, help="batch size"
     )
@@ -282,13 +241,6 @@ def get_hparams():
     )
     parser.add_argument(
         "--log_every", type=int, help="wandb log interval", default=200
-    )
-    parser.add_argument(
-        "-f0",
-        "--if_f0",
-        type=int,
-        required=True,
-        help="use f0 as one of the inputs of the model, 1 or 0",
     )
     parser.add_argument(
         "--if_ppg",
@@ -346,7 +298,6 @@ def get_hparams():
     hparams.pretrainD = args.pretrainD
     hparams.enable_opt_load = args.enable_opt_load
     hparams.version = args.version
-    hparams.gpus = args.gpus
     hparams.train.batch_size = args.batch_size
     hparams.train.total_steps = args.total_steps
     hparams.sample_rate = args.sample_rate
@@ -455,3 +406,255 @@ class HParams:
 
     def __repr__(self):
         return self.__dict__.__repr__()
+
+
+def savee(ckpt, sr, name, epoch, version, hps):
+    try:
+        opt = OrderedDict()
+        opt["weight"] = {}
+        for key in ckpt.keys():
+            if "enc_q" in key:
+                continue
+            opt["weight"][key] = ckpt[key].half()
+        opt["config"] = [
+            hps.data.filter_length // 2 + 1,
+            32,
+            hps.model.inter_channels,
+            hps.model.hidden_channels,
+            hps.model.filter_channels,
+            hps.model.n_heads,
+            hps.model.n_layers,
+            hps.model.kernel_size,
+            hps.model.p_dropout,
+            hps.model.resblock,
+            hps.model.resblock_kernel_sizes,
+            hps.model.resblock_dilation_sizes,
+            hps.model.upsample_rates,
+            hps.model.upsample_initial_channel,
+            hps.model.upsample_kernel_sizes,
+            hps.model.spk_embed_dim,
+            hps.model.gin_channels,
+            hps.data.sampling_rate,
+        ]
+        opt["info"] = "%sepoch" % epoch
+        opt["sr"] = sr
+        opt["version"] = version
+        save_path = str(Path(hps.save_dir) / f"{name}.pth")
+        torch.save(opt, save_path)
+        print(f"Saved model to {save_path}")
+        return "Success."
+    except:
+        return traceback.format_exc()
+
+
+def show_info(path):
+    try:
+        a = torch.load(path, map_location="cpu")
+        return "模型信息:%s\n采样率:%s\n模型是否输入音高引导:%s\n版本:%s" % (
+            a.get("info", "None"),
+            a.get("sr", "None"),
+            a.get("f0", "None"),
+            a.get("version", "None"),
+        )
+    except:
+        return traceback.format_exc()
+
+
+def extract_small_model(path, name, sr, if_f0, info, version):
+    try:
+        ckpt = torch.load(path, map_location="cpu")
+        if "model" in ckpt:
+            ckpt = ckpt["model"]
+        opt = OrderedDict()
+        opt["weight"] = {}
+        for key in ckpt.keys():
+            if "enc_q" in key:
+                continue
+            opt["weight"][key] = ckpt[key].half()
+        if sr == "40k":
+            opt["config"] = [
+                1025,
+                32,
+                192,
+                192,
+                768,
+                2,
+                6,
+                3,
+                0,
+                "1",
+                [3, 7, 11],
+                [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
+                [10, 10, 2, 2],
+                512,
+                [16, 16, 4, 4],
+                109,
+                256,
+                40000,
+            ]
+        elif sr == "48k":
+            if version == "v1":
+                opt["config"] = [
+                    1025,
+                    32,
+                    192,
+                    192,
+                    768,
+                    2,
+                    6,
+                    3,
+                    0,
+                    "1",
+                    [3, 7, 11],
+                    [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
+                    [10, 6, 2, 2, 2],
+                    512,
+                    [16, 16, 4, 4, 4],
+                    109,
+                    256,
+                    48000,
+                ]
+            else:
+                opt["config"] = [
+                    1025,
+                    32,
+                    192,
+                    192,
+                    768,
+                    2,
+                    6,
+                    3,
+                    0,
+                    "1",
+                    [3, 7, 11],
+                    [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
+                    [12, 10, 2, 2],
+                    512,
+                    [24, 20, 4, 4],
+                    109,
+                    256,
+                    48000,
+                ]
+        elif sr == "32k":
+            if version == "v1":
+                opt["config"] = [
+                    513,
+                    32,
+                    192,
+                    192,
+                    768,
+                    2,
+                    6,
+                    3,
+                    0,
+                    "1",
+                    [3, 7, 11],
+                    [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
+                    [10, 4, 2, 2, 2],
+                    512,
+                    [16, 16, 4, 4, 4],
+                    109,
+                    256,
+                    32000,
+                ]
+            else:
+                opt["config"] = [
+                    513,
+                    32,
+                    192,
+                    192,
+                    768,
+                    2,
+                    6,
+                    3,
+                    0,
+                    "1",
+                    [3, 7, 11],
+                    [[1, 3, 5], [1, 3, 5], [1, 3, 5]],
+                    [10, 8, 2, 2],
+                    512,
+                    [20, 16, 4, 4],
+                    109,
+                    256,
+                    32000,
+                ]
+        if info == "":
+            info = "Extracted model."
+        opt["info"] = info
+        opt["version"] = version
+        opt["sr"] = sr
+        opt["f0"] = int(if_f0)
+        torch.save(opt, "assets/weights/%s.pth" % name)
+        return "Success."
+    except:
+        return traceback.format_exc()
+
+
+def change_info(path, info, name):
+    try:
+        ckpt = torch.load(path, map_location="cpu")
+        ckpt["info"] = info
+        if name == "":
+            name = os.path.basename(path)
+        torch.save(ckpt, "assets/weights/%s" % name)
+        return "Success."
+    except:
+        return traceback.format_exc()
+
+
+def merge(path1, path2, alpha1, sr, f0, info, name, version):
+    try:
+
+        def extract(ckpt):
+            a = ckpt["model"]
+            opt = OrderedDict()
+            opt["weight"] = {}
+            for key in a.keys():
+                if "enc_q" in key:
+                    continue
+                opt["weight"][key] = a[key]
+            return opt
+
+        ckpt1 = torch.load(path1, map_location="cpu")
+        ckpt2 = torch.load(path2, map_location="cpu")
+        cfg = ckpt1["config"]
+        if "model" in ckpt1:
+            ckpt1 = extract(ckpt1)
+        else:
+            ckpt1 = ckpt1["weight"]
+        if "model" in ckpt2:
+            ckpt2 = extract(ckpt2)
+        else:
+            ckpt2 = ckpt2["weight"]
+        if sorted(list(ckpt1.keys())) != sorted(list(ckpt2.keys())):
+            return "Fail to merge the models. The model architectures are not the same."
+        opt = OrderedDict()
+        opt["weight"] = {}
+        for key in ckpt1.keys():
+            # try:
+            if key == "emb_g.weight" and ckpt1[key].shape != ckpt2[key].shape:
+                min_shape0 = min(ckpt1[key].shape[0], ckpt2[key].shape[0])
+                opt["weight"][key] = (
+                        alpha1 * (ckpt1[key][:min_shape0].float())
+                        + (1 - alpha1) * (ckpt2[key][:min_shape0].float())
+                ).half()
+            else:
+                opt["weight"][key] = (
+                        alpha1 * (ckpt1[key].float()) + (1 - alpha1) * (ckpt2[key].float())
+                ).half()
+        # except:
+        #     pdb.set_trace()
+        opt["config"] = cfg
+        """
+        if(sr=="40k"):opt["config"] = [1025, 32, 192, 192, 768, 2, 6, 3, 0, "1", [3, 7, 11], [[1, 3, 5], [1, 3, 5], [1, 3, 5]], [10, 10, 2, 2], 512, [16, 16, 4, 4,4], 109, 256, 40000]
+        elif(sr=="48k"):opt["config"] = [1025, 32, 192, 192, 768, 2, 6, 3, 0, "1", [3, 7, 11], [[1, 3, 5], [1, 3, 5], [1, 3, 5]], [10,6,2,2,2], 512, [16, 16, 4, 4], 109, 256, 48000]
+        elif(sr=="32k"):opt["config"] = [513, 32, 192, 192, 768, 2, 6, 3, 0, "1", [3, 7, 11], [[1, 3, 5], [1, 3, 5], [1, 3, 5]], [10, 4, 2, 2, 2], 512, [16, 16, 4, 4,4], 109, 256, 32000]
+        """
+        opt["sr"] = sr
+        opt["f0"] = 1 if f0 else 0
+        opt["version"] = version
+        opt["info"] = info
+        torch.save(opt, "assets/weights/%s.pth" % name)
+        return "Success."
+    except:
+        return traceback.format_exc()

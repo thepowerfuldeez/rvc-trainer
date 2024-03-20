@@ -13,8 +13,8 @@ import numpy as np
 from scipy.io import wavfile
 from pathlib import Path
 
-from rvc.infer.lib.audio import load_audio
-from rvc.infer.lib.slicer2 import Slicer
+from infer.lib.audio import load_audio
+from infer.lib.slicer2 import Slicer
 
 mutex = multiprocessing.Lock()
 

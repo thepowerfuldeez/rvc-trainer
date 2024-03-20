@@ -1,6 +1,8 @@
 import os
 import sys
 import traceback
+import argparse
+from pathlib import Path
 
 now_dir = os.getcwd()
 sys.path.append(now_dir)
@@ -8,21 +10,31 @@ import logging
 
 import numpy as np
 
-from rvc.infer.lib.audio import load_audio
+from infer.lib.rmvpe import RMVPE
+from infer.lib.audio import load_audio
 
 logging.getLogger("numba").setLevel(logging.WARNING)
 
-exp_dir = sys.argv[1]
-import torch_directml
 
-device = torch_directml.device(torch_directml.default_device())
-f = open("%s/extract_f0_feature.log" % exp_dir, "a+")
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--exp_dir", type=str, default=None)
+    parser.add_argument("--n_part", type=int, default=1)
+    parser.add_argument("--i_part", type=int, default=0)
+    parser.add_argument("--i_gpu", type=int, default=0)
+    parser.add_argument("--is_half", action="store_false")
+    # is_half by default is True
+    args = parser.parse_args()
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(args.i_gpu)
+    # f = open("%s/extract_f0_feature.log" % args.exp_dir, "a+")
+    return args
 
 
 def printt(strr):
     print(strr)
-    f.write("%s\n" % strr)
-    f.flush()
+    # f.write("%s\n" % strr)
+    # f.flush()
 
 
 class FeatureInput(object):
@@ -41,11 +53,10 @@ class FeatureInput(object):
         # p_len = x.shape[0] // self.hop
         if f0_method == "rmvpe":
             if hasattr(self, "model_rmvpe") == False:
-                from infer.lib.rmvpe import RMVPE
-
                 print("Loading rmvpe model")
+                rmvpe_path = str(Path(__file__).parent.parent.parent.parent.parent / 'models/rmvpe.pt')
                 self.model_rmvpe = RMVPE(
-                    "assets/rmvpe/rmvpe.pt", is_half=False, device=device
+                    rmvpe_path, is_half=is_half, device="cuda"
                 )
             f0 = self.model_rmvpe.infer_from_audio(x, thred=0.03)
         return f0
@@ -53,7 +64,7 @@ class FeatureInput(object):
     def coarse_f0(self, f0):
         f0_mel = 1127 * np.log(1 + f0 / 700)
         f0_mel[f0_mel > 0] = (f0_mel[f0_mel > 0] - self.f0_mel_min) * (
-            self.f0_bin - 2
+                self.f0_bin - 2
         ) / (self.f0_mel_max - self.f0_mel_min) + 1
 
         # use 0 or 1
@@ -77,8 +88,8 @@ class FeatureInput(object):
                     if idx % n == 0:
                         printt("f0ing,now-%s,all-%s,-%s" % (idx, len(paths), inp_path))
                     if (
-                        os.path.exists(opt_path1 + ".npy") == True
-                        and os.path.exists(opt_path2 + ".npy") == True
+                            os.path.exists(opt_path1 + ".npy") == True
+                            and os.path.exists(opt_path2 + ".npy") == True
                     ):
                         continue
                     featur_pit = self.compute_f0(inp_path, f0_method)
@@ -98,15 +109,18 @@ class FeatureInput(object):
 
 
 if __name__ == "__main__":
-    # exp_dir=r"E:\codes\py39\dataset\mi-test"
-    # n_p=16
-    # f = open("%s/log_extract_f0.log"%exp_dir, "w")
-    printt(sys.argv)
+    args = parse_args()
+    exp_dir = args.exp_dir
+    n_part = args.n_part
+    i_part = args.i_part
+    i_gpu = args.i_gpu
+    is_half = args.is_half
+
     featureInput = FeatureInput()
     paths = []
-    inp_root = "%s/1_16k_wavs" % (exp_dir)
-    opt_root1 = "%s/2a_f0" % (exp_dir)
-    opt_root2 = "%s/2b-f0nsf" % (exp_dir)
+    inp_root = f"{exp_dir}/1_16k_wavs"
+    opt_root1 = f"{exp_dir}/2a_f0"
+    opt_root2 = f"{exp_dir}/2b-f0nsf"
 
     os.makedirs(opt_root1, exist_ok=True)
     os.makedirs(opt_root2, exist_ok=True)
@@ -118,19 +132,6 @@ if __name__ == "__main__":
         opt_path2 = "%s/%s" % (opt_root2, name)
         paths.append([inp_path, opt_path1, opt_path2])
     try:
-        featureInput.go(paths, "rmvpe")
+        featureInput.go(paths[i_part::n_part], "rmvpe")
     except:
         printt("f0_all_fail-%s" % (traceback.format_exc()))
-    # ps = []
-    # for i in range(n_p):
-    #     p = Process(
-    #         target=featureInput.go,
-    #         args=(
-    #             paths[i::n_p],
-    #             f0method,
-    #         ),
-    #     )
-    #     ps.append(p)
-    #     p.start()
-    # for i in range(n_p):
-    #     ps[i].join()

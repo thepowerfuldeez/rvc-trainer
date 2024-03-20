@@ -14,8 +14,8 @@ import shutil
 import logging
 from pathlib import Path
 
-from rvc.infer.modules.vc.modules import VC
-from rvc.configs.config import Config
+from infer.modules.vc.modules import VC
+from configs.config import Config
 
 logging.getLogger("numba").setLevel(logging.WARNING)
 

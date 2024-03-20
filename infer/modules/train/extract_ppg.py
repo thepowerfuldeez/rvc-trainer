@@ -4,13 +4,12 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import numpy as np
 import argparse
 import torch
-import random
 import traceback
 from tqdm import tqdm
 from pathlib import Path
 
-from rvc.infer.lib.whisper.model import Whisper, ModelDimensions
-from rvc.infer.lib.whisper.audio import load_audio, pad_or_trim, log_mel_spectrogram
+from src.whisper.model import Whisper, ModelDimensions
+from src.whisper.audio import load_audio, pad_or_trim, log_mel_spectrogram
 
 
 def parse_args():

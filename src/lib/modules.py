@@ -6,8 +6,8 @@ from torch import nn
 from torch.nn import Conv1d
 from torch.nn.utils import remove_weight_norm, weight_norm
 
-from rvc.infer.lib.infer_pack import commons
-from rvc.infer.lib.infer_pack.commons import get_padding, init_weights
+from src.lib import commons
+from src.lib.commons import get_padding, init_weights
 
 LRELU_SLOPE = 0.2
 
@@ -624,3 +624,4 @@ class ResidualCouplingBlock(nn.Module):
                     torch.nn.utils.remove_weight_norm(self.flows[i * 2])
 
         return self
+

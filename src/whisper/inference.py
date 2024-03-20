@@ -5,8 +5,8 @@ import numpy as np
 import argparse
 import torch
 
-from rvc.infer.lib.whisper.model import Whisper, ModelDimensions
-from rvc.infer.lib.whisper.audio import load_audio, pad_or_trim, log_mel_spectrogram
+from src.whisper.model import Whisper, ModelDimensions
+from src.whisper.audio import load_audio, log_mel_spectrogram
 
 
 def load_model(path, device) -> Whisper:

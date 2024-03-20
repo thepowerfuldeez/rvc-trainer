@@ -3,14 +3,12 @@ from pathlib import Path
 from typing import Optional
 
 import numpy as np
-import soundfile as sf
 import torch
 
-from rvc.infer.lib.audio import load_audio
-from rvc.infer.lib.infer_pack.models import SynthesizerTrnMs768NSFsid
-from rvc.infer.lib.infer_pack.legacy import SynthesizerTrnMs768NSFsid_nono, SynthesizerTrnMs256NSFsid
-from rvc.infer.modules.vc.pipeline import Pipeline
-from rvc.infer.modules.vc.utils import load_hubert
+from src.lib.models import RVCModel
+from infer.lib.audio import load_audio
+from infer.modules.vc.pipeline import Pipeline
+from infer.modules.vc.utils import load_hubert
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +20,6 @@ class VC:
         self.pipeline = None
         self.cpt = None
         self.tgt_sr = None
-        self.if_f0 = None
         self.hubert_model = None
 
     def get_vc(self, rmvpe_path, hubert_path):
@@ -44,21 +41,10 @@ class VC:
         self.pipeline.set_t_pad_tgt(self.tgt_sr)
 
         n_spk = self.cpt["weight"]["emb_g.weight"].shape[0]
-        self.if_f0 = self.cpt.get("f0", 1)
 
-        if self.if_f0:
-            gen_class = SynthesizerTrnMs768NSFsid
-        else:
-            gen_class = SynthesizerTrnMs768NSFsid_nono
-        try:
-            self.net_g = gen_class(*self.cpt["config"], is_half=self.config.is_half)
-            self.net_g.load_state_dict(self.cpt["weight"], strict=False)
-        except RuntimeError:
-            # try RVC v1
-            gen_class = SynthesizerTrnMs256NSFsid
-            self.net_g = gen_class(*self.cpt["config"], is_half=self.config.is_half)
-            self.net_g.load_state_dict(self.cpt["weight"], strict=False)
-            print("using RVC v1")
+        gen_class = RVCModel
+        self.net_g = gen_class(*self.cpt["config"], is_half=self.config.is_half)
+        self.net_g.load_state_dict(self.cpt["weight"], strict=False)
         self.net_g.eval().to(self.config.device)
         self.net_g = self.net_g.half() if self.config.is_half else self.net_g.float()
 

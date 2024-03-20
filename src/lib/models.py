@@ -7,15 +7,11 @@ logger = logging.getLogger(__name__)
 import torch
 from torch import nn
 
-from rvc.infer.lib.infer_pack.commons import sequence_mask, rand_slice_segments, slice_segments2
-from rvc.infer.lib.infer_pack.attentions import Encoder
-from rvc.infer.lib.infer_pack.modules import WN, ResidualCouplingBlock
-from rvc.infer.lib.infer_pack.models_hifigan import GeneratorNSF
-
-# from infer.lib.infer_pack.models_bigvgan import Generator as GeneratorBigVgan
-
-has_xpu = bool(hasattr(torch, "xpu") and torch.xpu.is_available())
-
+from src.lib.commons import sequence_mask, rand_slice_segments, slice_segments2
+from src.lib.attentions import Encoder
+from src.lib.modules import WN, ResidualCouplingBlock
+from src.lib.models_hifigan import GeneratorNSF
+from src.lib.models_bigvgan import GeneratorBigVgan
 
 sr2sr = {
     "32k": 32000,
@@ -25,7 +21,7 @@ sr2sr = {
 
 
 # Class representing a text encoder with 768-dimensional input.
-class TextEncoder768(nn.Module):
+class TextEncoder(nn.Module):
     def __init__(
             self,
             out_channels,
@@ -38,7 +34,7 @@ class TextEncoder768(nn.Module):
             f0=True,
             ppg_dim=None
     ):
-        super(TextEncoder768, self).__init__()
+        super(TextEncoder, self).__init__()
         self.out_channels = out_channels
         self.hidden_channels = hidden_channels
         self.filter_channels = filter_channels
@@ -153,7 +149,7 @@ class PosteriorEncoder(nn.Module):
         return self
 
 
-class SynthesizerTrnMs768NSFsid(nn.Module):
+class RVCModel(nn.Module):
     def __init__(
             self,
             spec_channels,
@@ -177,7 +173,7 @@ class SynthesizerTrnMs768NSFsid(nn.Module):
             ppg_dim=None,
             **kwargs
     ):
-        super(SynthesizerTrnMs768NSFsid, self).__init__()
+        super(RVCModel, self).__init__()
         if isinstance(sr, str):
             sr = sr2sr[sr]
         self.spec_channels = spec_channels
@@ -203,7 +199,7 @@ class SynthesizerTrnMs768NSFsid(nn.Module):
         self.emb_g = nn.Embedding(self.spk_embed_dim, gin_channels)
 
         # text encoder
-        self.enc_p = TextEncoder768(
+        self.enc_p = TextEncoder(
             inter_channels,
             hidden_channels,
             filter_channels,
@@ -231,30 +227,30 @@ class SynthesizerTrnMs768NSFsid(nn.Module):
         )
 
         # # decoder (nsf-hifigan)
-        self.dec = GeneratorNSF(
-            inter_channels,
-            resblock,
-            resblock_kernel_sizes,
-            resblock_dilation_sizes,
-            upsample_rates,
-            upsample_initial_channel,
-            upsample_kernel_sizes,
-            gin_channels=gin_channels,
-            sr=sr,
-            is_half=kwargs["is_half"],
-        )
+        # self.dec = GeneratorNSF(
+        #     inter_channels,
+        #     resblock,
+        #     resblock_kernel_sizes,
+        #     resblock_dilation_sizes,
+        #     upsample_rates,
+        #     upsample_initial_channel,
+        #     upsample_kernel_sizes,
+        #     gin_channels=gin_channels,
+        #     sr=sr,
+        #     is_half=kwargs["is_half"],
+        # )
 
         # decoder (big-vgan)
-        # self.dec = GeneratorBigVgan(
-        #     resblock_kernel_sizes=resblock_kernel_sizes,
-        #     resblock_dilation_sizes=resblock_dilation_sizes,
-        #     upsample_rates=upsample_rates,
-        #     upsample_kernel_sizes=upsample_kernel_sizes,
-        #     upsample_input=inter_channels,
-        #     upsample_initial_channel=upsample_initial_channel,
-        #     spk_dim=gin_channels,
-        #     sampling_rate=sr,
-        # )
+        self.dec = GeneratorBigVgan(
+            resblock_kernel_sizes=resblock_kernel_sizes,
+            resblock_dilation_sizes=resblock_dilation_sizes,
+            upsample_rates=upsample_rates,
+            upsample_kernel_sizes=upsample_kernel_sizes,
+            upsample_input=inter_channels,
+            upsample_initial_channel=upsample_initial_channel,
+            spk_dim=gin_channels,
+            sampling_rate=sr,
+        )
 
         logger.debug(
             "gin_channels: "

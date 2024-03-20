@@ -11,7 +11,7 @@ import torch
 import torch.nn.functional as F
 from scipy import signal
 
-from rvc.infer.lib.rmvpe import RMVPE
+from infer.lib.rmvpe import RMVPE
 
 logger = logging.getLogger(__name__)
 

@@ -1,16 +1,11 @@
-import torch
 import torch.nn as nn
-import numpy as np
 import torch
 from torch.nn import Conv1d, Conv2d
 from torch.nn import functional as F
 from torch.nn.utils import spectral_norm, weight_norm
 
-from rvc.infer.lib.infer_pack.modules import LRELU_SLOPE
-from rvc.infer.lib.infer_pack.commons import get_padding
-
-has_xpu = bool(hasattr(torch, "xpu") and torch.xpu.is_available())
-
+from src.lib.modules import LRELU_SLOPE
+from src.lib.commons import get_padding
 
 class DiscriminatorS(torch.nn.Module):
     def __init__(self, use_spectral_norm=False):
@@ -106,12 +101,7 @@ class DiscriminatorP(torch.nn.Module):
         b, c, t = x.shape
         if t % self.period != 0:  # pad first
             n_pad = self.period - (t % self.period)
-            if has_xpu and x.dtype == torch.bfloat16:
-                x = F.pad(x.to(dtype=torch.float16), (0, n_pad), "reflect").to(
-                    dtype=torch.bfloat16
-                )
-            else:
-                x = F.pad(x, (0, n_pad), "reflect")
+            x = F.pad(x, (0, n_pad), "reflect")
             t = t + n_pad
         x = x.view(b, c, t // self.period, self.period)
 

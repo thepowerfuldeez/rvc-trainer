@@ -6,8 +6,8 @@ from torch import nn
 from torch.nn import Conv1d, ConvTranspose1d, functional as F
 from torch.nn.utils import weight_norm, remove_weight_norm
 
-from infer.lib.infer_pack.commons import init_weights
-from infer.lib.infer_pack.modules import ResBlock1, ResBlock2, LRELU_SLOPE
+from src.lib.commons import init_weights
+from src.lib.modules import ResBlock1, ResBlock2, LRELU_SLOPE
 
 
 # Class representing the generator module in the NSF (Neural Source-Filter) model.
