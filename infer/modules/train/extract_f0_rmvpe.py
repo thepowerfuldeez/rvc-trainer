@@ -54,9 +54,9 @@ class FeatureInput(object):
         if f0_method == "rmvpe":
             if hasattr(self, "model_rmvpe") == False:
                 print("Loading rmvpe model")
-                rmvpe_path = str(Path(__file__).parent.parent.parent.parent.parent / 'models/rmvpe.pt')
+                model_path = Path(__file__).parents[3] / "models/rmvpe.pt"
                 self.model_rmvpe = RMVPE(
-                    rmvpe_path, is_half=is_half, device="cuda"
+                    model_path, is_half=is_half, device="cuda"
                 )
             f0 = self.model_rmvpe.infer_from_audio(x, thred=0.03)
         return f0
@@ -87,18 +87,16 @@ class FeatureInput(object):
                 try:
                     if idx % n == 0:
                         printt("f0ing,now-%s,all-%s,-%s" % (idx, len(paths), inp_path))
-                    if (
-                            os.path.exists(opt_path1 + ".npy") == True
-                            and os.path.exists(opt_path2 + ".npy") == True
-                    ):
+                    if Path(opt_path1 + ".npy").exists() and Path(opt_path2 + ".npy").exists():
                         continue
-                    featur_pit = self.compute_f0(inp_path, f0_method)
+
+                    feature_pitch = self.compute_f0(inp_path, f0_method)
                     np.save(
                         opt_path2,
-                        featur_pit,
+                        feature_pitch,
                         allow_pickle=False,
                     )  # nsf
-                    coarse_pit = self.coarse_f0(featur_pit)
+                    coarse_pit = self.coarse_f0(feature_pitch)
                     np.save(
                         opt_path1,
                         coarse_pit,

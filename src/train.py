@@ -86,6 +86,7 @@ def initialize_models_and_optimizers(hps):
     optim_g = torch.optim.AdamW(
         net_g.parameters(),
         hps.train.learning_rate,
+        weight_decay=0.02,
         betas=hps.train.betas,
         eps=hps.train.eps,
     )
@@ -147,7 +148,7 @@ def load_model_checkpoint(hps, train_loader, net_g, net_d, optim_g, optim_d, ran
     return epoch_str, global_step
 
 
-def setup_training(hps, net_g, net_d, optim_g, optim_d, epoch_str):
+def setup_schedulers(hps, net_g, net_d, optim_g, optim_d, epoch_str):
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(
         optim_g, gamma=hps.train.lr_decay, last_epoch=epoch_str - 2
     )
@@ -169,6 +170,36 @@ def run_training_epoch(epoch, hps, nets, optims, schedulers, train_loader, logge
     optim_g, optim_d = optims
     scheduler_g, scheduler_d = schedulers
     global global_step
+
+    if epoch % hps.save_interval == 0 or epoch <= 1:
+        accelerator.save_state(hps.model_dir + f"/checkpoint_{epoch}")
+        save_checkpoint(
+            accelerator.unwrap_model(net_g),
+            optim_g,
+            hps.train.learning_rate,
+            epoch,
+            os.path.join(hps.model_dir, f"G_{global_step}.pth"),
+            accelerator
+        )
+        save_checkpoint(
+            accelerator.unwrap_model(net_d),
+            optim_d,
+            hps.train.learning_rate,
+            epoch,
+            os.path.join(hps.model_dir, f"D_{global_step}.pth"),
+            accelerator
+        )
+        if hps.save_every_weights == "1":
+            ckpt = accelerator.get_state_dict(net_g)
+            savee(
+                ckpt,
+                hps.sample_rate,
+                hps.name + "_e%s_s%s" % (epoch, global_step),
+                epoch,
+                hps.version,
+                hps,
+            )
+            logger.info(f"saving ckpt {hps.name}_e{epoch}:{global_step}")
 
     net_g.train()
     net_d.train()
@@ -226,6 +257,7 @@ def run_training_epoch(epoch, hps, nets, optims, schedulers, train_loader, logge
         optim_d.zero_grad()
         accelerator.backward(loss_disc)
         grad_norm_d = commons.clip_grad_value_(net_d.parameters(), 1000.0)
+        optim_d.step()
 
         y_d_hat_r, y_d_hat_g, fmap_r, fmap_g = net_d(wave, y_hat)
         loss_mel = F.l1_loss(y_mel, y_hat_mel) * hps.train.c_mel
@@ -237,6 +269,7 @@ def run_training_epoch(epoch, hps, nets, optims, schedulers, train_loader, logge
         optim_g.zero_grad()
         accelerator.backward(loss_gen_all)
         grad_norm_g = commons.clip_grad_value_(net_g.parameters(), 1000.0)
+        optim_g.step()
 
         if batch_idx % hps.train.log_interval == 0:
             lr = optim_g.param_groups[0]["lr"]
@@ -244,6 +277,9 @@ def run_training_epoch(epoch, hps, nets, optims, schedulers, train_loader, logge
                 f"Train Epoch: {epoch} [{100.0 * batch_idx / len(train_loader):.0f}%]"
             )
             logger.info([global_step, lr])
+            logger.info(
+                f"loss_disc={loss_disc:.3f}, loss_gen={loss_gen:.3f}, loss_fm={loss_fm:.3f},loss_mel={loss_mel:.3f}, loss_kl={loss_kl:.3f}"
+            )
             scalar_dict = {
                 "loss/total/g": loss_gen_all,
                 "loss/total/d": loss_disc,
@@ -272,36 +308,6 @@ def run_training_epoch(epoch, hps, nets, optims, schedulers, train_loader, logge
 
         global_step += 1
 
-    if epoch % hps.save_interval == 0:
-        save_checkpoint(
-            net_g,
-            optim_g,
-            hps.train.learning_rate,
-            epoch,
-            os.path.join(hps.model_dir, f"G_{global_step}.pth"),
-        )
-        save_checkpoint(
-            net_d,
-            optim_d,
-            hps.train.learning_rate,
-            epoch,
-            os.path.join(hps.model_dir, f"D_{global_step}.pth"),
-        )
-        if hps.save_every_weights == "1":
-            if hasattr(net_g, "module"):
-                ckpt = net_g.module.state_dict()
-            else:
-                ckpt = net_g.state_dict()
-            savee(
-                ckpt,
-                hps.sample_rate,
-                hps.name + "_e%s_s%s" % (epoch, global_step),
-                epoch,
-                hps.version,
-                hps,
-            )
-            logger.info(f"saving ckpt {hps.name}_e{epoch}:{global_step}")
-
     logger.info(f"====> Epoch: {epoch} {epoch_recorder.record()}")
     if epoch >= hps.total_epoch or global_step >= hps.train.total_steps:
         logger.info("Training is done. The program is closed.")
@@ -325,7 +331,6 @@ def run(
         wandb_project_name="coveroke"
 ):
     global global_step
-    accelerator = Accelerator()
     if rank == 0:
         logger = get_logger(hps.model_dir)
         logger.info(hps)
@@ -342,11 +347,16 @@ def run(
     train_loader = prepare_data_loaders(hps, n_gpus, rank)
     net_g, net_d, optim_g, optim_d = initialize_models_and_optimizers(hps)
     epoch_str, global_step = load_model_checkpoint(hps, train_loader, net_g, net_d, optim_g, optim_d, rank, logger)
-    scheduler_g, scheduler_d = setup_training(hps, net_g, net_d, optim_g, optim_d, epoch_str)
+    scheduler_g, scheduler_d = setup_schedulers(hps, net_g, net_d, optim_g, optim_d, epoch_str)
 
+    accelerator = Accelerator()
     train_loader, net_g, net_d, optim_g, optim_d, scheduler_g, scheduler_d = accelerator.prepare(
         train_loader, net_g, net_d, optim_g, optim_d, scheduler_g, scheduler_d
     )
+
+    if hps.resume is not None:
+        accelerator.load_state(hps.resume)
+        print("loaded accelerator state provided by --resume")
 
     for epoch in range(epoch_str, hps.train.epochs + 1):
         if global_step > hps.train.total_steps:

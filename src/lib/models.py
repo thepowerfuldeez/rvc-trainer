@@ -50,7 +50,7 @@ class TextEncoder(nn.Module):
             n_heads,
             n_layers,
             kernel_size,
-            float(p_dropout),
+            p_dropout,
         )
         self.proj = nn.Conv1d(hidden_channels, out_channels * 2, 1)
         if f0 is True:
@@ -77,12 +77,19 @@ class TextEncoder(nn.Module):
         x = self.lrelu(x)
         # x shape is [bs, seq_len, hs]
 
-        x = torch.transpose(x, 1, 2)  # [b, h, t]
-        x_mask = torch.unsqueeze(sequence_mask(lengths, x.size(2)), 1).to(
-            x.dtype
-        )
-        x = self.encoder(x * x_mask, x_mask)
-        stats = self.proj(x) * x_mask
+        # [bs, seq_len]
+        x_mask = sequence_mask(lengths, x.size(1)).to(x.dtype)
+
+        # Adjust the forward pass call for the encoder.
+        # Note: If nn.MultiheadAttention expects a different attn_mask shape or type, adjust accordingly.
+        # Here, attn_mask is used directly if the attention layer can handle boolean masks.
+        # Otherwise, convert it to the expected format or values.
+        x = self.encoder(x, x_mask)
+        x_mask = x_mask.unsqueeze(-1)
+
+        # since proj is another conv, we have to transpose again
+        stats = self.proj(x.transpose(1, 2)).transpose(1, 2) * x_mask
+        stats = stats.transpose(1, 2)
 
         m, logs = torch.split(stats, self.out_channels, dim=1)
         return m, logs, x_mask
@@ -170,6 +177,7 @@ class RVCModel(nn.Module):
             spk_embed_dim,
             gin_channels,
             sr,
+            vocoder_type='hifigan',
             ppg_dim=None,
             **kwargs
     ):
@@ -226,31 +234,32 @@ class RVCModel(nn.Module):
             inter_channels, hidden_channels, 5, 1, 3, gin_channels=gin_channels
         )
 
-        # # decoder (nsf-hifigan)
-        # self.dec = GeneratorNSF(
-        #     inter_channels,
-        #     resblock,
-        #     resblock_kernel_sizes,
-        #     resblock_dilation_sizes,
-        #     upsample_rates,
-        #     upsample_initial_channel,
-        #     upsample_kernel_sizes,
-        #     gin_channels=gin_channels,
-        #     sr=sr,
-        #     is_half=kwargs["is_half"],
-        # )
-
-        # decoder (big-vgan)
-        self.dec = GeneratorBigVgan(
-            resblock_kernel_sizes=resblock_kernel_sizes,
-            resblock_dilation_sizes=resblock_dilation_sizes,
-            upsample_rates=upsample_rates,
-            upsample_kernel_sizes=upsample_kernel_sizes,
-            upsample_input=inter_channels,
-            upsample_initial_channel=upsample_initial_channel,
-            spk_dim=gin_channels,
-            sampling_rate=sr,
-        )
+        if vocoder_type == 'hifigan':
+            # decoder (nsf-hifigan)
+            self.dec = GeneratorNSF(
+                inter_channels,
+                resblock,
+                resblock_kernel_sizes,
+                resblock_dilation_sizes,
+                upsample_rates,
+                upsample_initial_channel,
+                upsample_kernel_sizes,
+                gin_channels=gin_channels,
+                sr=sr,
+                is_half=True,
+            )
+        elif vocoder_type == 'bigvgan':
+            # decoder (big-vgan)
+            self.dec = GeneratorBigVgan(
+                resblock_kernel_sizes=resblock_kernel_sizes,
+                resblock_dilation_sizes=resblock_dilation_sizes,
+                upsample_rates=upsample_rates,
+                upsample_kernel_sizes=upsample_kernel_sizes,
+                upsample_input=inter_channels,
+                upsample_initial_channel=upsample_initial_channel,
+                spk_dim=gin_channels,
+                sampling_rate=sr,
+            )
 
         logger.debug(
             "gin_channels: "

@@ -109,16 +109,13 @@ def load_checkpoint(checkpoint_path, model, optimizer=None, load_opt=1):
     return model, optimizer, learning_rate, iteration
 
 
-def save_checkpoint(model, optimizer, learning_rate, iteration, checkpoint_path):
+def save_checkpoint(model, optimizer, learning_rate, iteration, checkpoint_path, accelerator):
     logger.info(
         "Saving model and optimizer state at epoch {} to {}".format(
             iteration, checkpoint_path
         )
     )
-    if hasattr(model, "module"):
-        state_dict = model.module.state_dict()
-    else:
-        state_dict = model.state_dict()
+    state_dict = accelerator.get_state_dict(model)
     torch.save(
         {
             "model": state_dict,
@@ -193,9 +190,11 @@ def plot_spectrogram_to_numpy(spectrogram):
 def get_hparams():
     parser = argparse.ArgumentParser()
 
-
     parser.add_argument(
         "--exp_dir", type=str, required=True, help="experiment dir"
+    )
+    parser.add_argument(
+        "--resume", type=str, required=False, default=None, help="resume accelerate state path"
     )
     parser.add_argument(
         "--save_dir", type=str, required=True, help="save dir (overwrites assets/weights/)"
@@ -289,6 +288,7 @@ def get_hparams():
 
     hparams = HParams(**config)
 
+    hparams.resume = args.resume
     hparams.data.training_files = f"{experiment_dir}/filelist.txt"
     hparams.data.data_root = args.data_root
 
